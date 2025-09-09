@@ -81,7 +81,13 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
 # 🔒 토큰은 무조건 환경변수에서!
-TOKEN = os.getenv("MTQxNDU4MzExMzY5ODI1MDc4Mw.GeWd6B.OaTlE61fbkIu93xVHTfsmkXKl5UnL79kE4Q8w8")
+TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN 환경변수가 없습니다.")
-bot.run(TOKEN)
+else:
+    print("🔑 토큰 로드 성공, 길이:", len(TOKEN))
+
+try:
+    bot.run(TOKEN)
+except Exception as e:
+    print(f"🚨 봇 실행 중 오류 발생: {e}")

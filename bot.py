@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import re
 import asyncio
+import os  # 환경 변수 불러오기용
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -122,4 +123,4 @@ async def ping(ctx):
 # -------------------
 # 실행
 # -------------------
-bot.run("MTQxNDU4MzExMzY5ODI1MDc4Mw.GRDe0b.ebA7VYoKtjStJW188YxucZdJxyFe7lQjdszLW4")
+bot.run(os.getenv("MTQxNDU4MzExMzY5ODI1MDc4Mw.GRDe0b.ebA7VYoKtjStJW188YxucZdJxyFe7lQjdszLW4"))  # 🔑 환경 변수에서 토큰 불러오기

@@ -1,93 +1,125 @@
-import os
-import re
 import discord
 from discord.ext import commands
+import re
+import asyncio
 
-# ✅ 최소 인텐트: 꼭 필요한 것만
-intents = discord.Intents.default()
-intents.message_content = True   # 개발자 포털에서도 ON 필요
-intents.members = True           # 닉네임 변경 대상 확인용
-
+intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-def extract_prefix_only(nickname):
+# -------------------
+# 접두사 추출 함수
+# -------------------
+def extract_prefix(nickname: str) -> str:
     prefix = ""
     bracket_patterns = [
-        r'\[[^\]]+\]', r'꒰[^꒱]+꒱', r'【[^】]+】', r'「[^」]+」', r'《[^》]+》',
+        r'\[[^\]]+\]',
+        r'꒰[^꒱]+꒱',
+        r'【[^】]+】',
+        r'「[^」]+」',
+        r'《[^》]+》',
     ]
     combined_pattern = re.compile(r'^(' + '|'.join(bracket_patterns) + r')\s*')
-    while True:
-        match = combined_pattern.match(nickname)
-        if match:
-            prefix += match.group(0)
-            nickname = nickname[match.end():]
-        else:
-            break
+    while match := combined_pattern.match(nickname):
+        prefix += match.group(0)
+        nickname = nickname[match.end():]
+
     if prefix and not prefix.endswith(' '):
         prefix += ' '
+
     special_pattern = re.compile(r'^[#*!~]+')
-    match = special_pattern.match(nickname)
-    if match:
-        cleaned = ""
-        for c in match.group(0):
-            if c not in cleaned:
-                cleaned += c
+    if match := special_pattern.match(nickname):
+        cleaned = "".join(dict.fromkeys(match.group(0)))  # 중복 제거
         if cleaned:
             prefix += cleaned + ' '
+
     return prefix
 
-# ✅ (선택) 환경변수로 제한을 주고 싶으면: "guildId1,guildId2" 형태
-ALLOWED_GUILDS = set(map(int, os.getenv("ALLOWED_GUILDS","").split(","))) if os.getenv("ALLOWED_GUILDS") else None
-ALLOWED_CHANNELS = set(map(int, os.getenv("ALLOWED_CHANNELS","").split(","))) if os.getenv("ALLOWED_CHANNELS") else None
+# -------------------
+# 전역 상태
+# -------------------
+nickname_change_enabled = True
+all_features_enabled = True
+nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널 ID
 
-def is_allowed(message: discord.Message) -> bool:
-    if not message.guild:
-        return False
-    if ALLOWED_GUILDS and message.guild.id not in ALLOWED_GUILDS:
-        return False
-    if ALLOWED_CHANNELS and message.channel.id not in ALLOWED_CHANNELS:
-        return False
-    return True
-
+# -------------------
+# 이벤트
+# -------------------
 @bot.event
 async def on_ready():
     print(f"✅ 로그인 성공: {bot.user}")
 
 @bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-    if not is_allowed(message):
+async def on_message(message):
+    global nickname_change_enabled, all_features_enabled
+
+    if message.author == bot.user:
         return
 
+    content = message.content.strip().lower()
+
+    # ✅ 전용 채널이 아니면 무시
+    if message.channel.id != nickname_channel_id:
+        return
+
+    # 모든 기능 종료 상태면 무시
+    if not all_features_enabled:
+        return
+
+    # "off" 입력 시 전체 기능 종료 (채널 내에서만 가능)
+    if content == "off":
+        all_features_enabled = False
+        nickname_change_enabled = False
+        await message.channel.send("⚠️ 모든 기능이 종료되었습니다.")
+        return
+
+    # ✅ 명령어도 전용 채널에서만 작동
+    await bot.process_commands(message)
+
+    # 닉네임 변경 기능 OFF 상태면 무시
+    if not nickname_change_enabled:
+        return
+
+    # -------------------
+    # 닉네임 변경 로직
+    # -------------------
     new_name = message.content.strip()
     current_nick = message.author.display_name
-    prefix = extract_prefix_only(current_nick)
+    prefix = extract_prefix(current_nick)
 
-    if new_name == "삭제":
-        new_nickname = prefix.strip()
-    else:
-        new_nickname = f"{prefix}{new_name}"
+    # "삭제" 입력 시 접두사만 유지
+    new_nickname = prefix.strip() if new_name == "삭제" else f"{prefix}{new_name}"
 
     if new_nickname != current_nick:
         try:
             await message.author.edit(nick=new_nickname)
-            print(f"🎉 닉네임 변경: {current_nick} → {new_nickname}")
         except discord.Forbidden:
-            print("❌ 권한 부족(Manage Nicknames / 역할 순서 확인)")
+            print(f"권한 부족: {message.author} 닉네임 변경 실패")
         except discord.HTTPException as e:
-            print(f"⚠️ HTTP 오류: {e}")
+            print(f"닉네임 변경 실패 (HTTPException): {e}")
+        except Exception as e:
+            print(f"닉네임 변경 실패 (Exception): {e}")
 
-    await bot.process_commands(message)
+# -------------------
+# 명령어
+# -------------------
+@bot.command()
+async def toggle_nick(ctx):
+    """닉네임 변경 기능 ON/OFF 토글"""
+    global nickname_change_enabled
+    if not all_features_enabled:
+        await ctx.send("⚠️ 봇의 모든 기능이 종료되어 사용할 수 없습니다.")
+        return
+    nickname_change_enabled = not nickname_change_enabled
+    status = "✅ 활성화됨" if nickname_change_enabled else "❌ 비활성화됨"
+    await ctx.send(f"닉네임 변경 기능이 이제 {status}")
 
-# 🔒 토큰은 무조건 환경변수에서!
-TOKEN = os.getenv("DISCORD_TOKEN")
-if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN 환경변수가 없습니다.")
-else:
-    print("🔑 토큰 로드 성공, 길이:", len(TOKEN))
+@bot.command()
+async def ping(ctx):
+    if not all_features_enabled:
+        return
+    await ctx.send("pong!")
 
-try:
-    bot.run(TOKEN)
-except Exception as e:
-    print(f"🚨 봇 실행 중 오류 발생: {e}")
+# -------------------
+# 실행
+# -------------------
+bot.run("MTQxNDU4MzExMzY5ODI1MDc4Mw.GRDe0b.ebA7VYoKtjStJW188YxucZdJxyFe7lQjdszLW4")

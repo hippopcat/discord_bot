@@ -3,6 +3,7 @@ from discord.ext import commands
 import re
 import asyncio
 import os  # 환경 변수 불러오기용
+import sys  # 프로그램 종료용
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -123,4 +124,9 @@ async def ping(ctx):
 # -------------------
 # 실행
 # -------------------
-bot.run(os.getenv("MTQxNDU4MzExMzY5ODI1MDc4Mw.GRDe0b.ebA7VYoKtjStJW188YxucZdJxyFe7lQjdszLW4"))  # 🔑 환경 변수에서 토큰 불러오기
+token = os.getenv("DISCORD_TOKEN")
+if not token:
+    print("❌ 환경 변수 DISCORD_TOKEN이 설정되지 않았습니다. Railway Variables에 추가하세요.")
+    sys.exit(1)
+
+bot.run(token)

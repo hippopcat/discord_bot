@@ -13,7 +13,42 @@ nickname_change_enabled = True
 all_features_enabled = True
 
 nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널
-event_target_channel_id = 1415671461334614024  # 📌 멘트를 보낼 목적 채널 (코드에서 미리 지정)
+event_target_channel_id = 1415671461334614024  # 이벤트 멘트 채널
+ticket_category_id = 1415676436022558784  # 티켓 채널이 생성될 카테고리
+
+# -------------------
+# 티켓 버튼 클래스
+# -------------------
+class TicketButton(discord.ui.View):
+    def __init__(self, category: discord.CategoryChannel):
+        super().__init__(timeout=None)
+        self.category = category
+
+    @discord.ui.button(label="티켓 열기", style=discord.ButtonStyle.green)
+    async def open_ticket(self, button: discord.ui.Button, interaction: discord.Interaction):
+        guild = interaction.guild
+        user = interaction.user
+
+        # 티켓 채널 이름
+        channel_name = f"ticket-{user.name}"
+
+        # 권한 설정: 유저만 접근
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        }
+
+        # 카테고리 가져오기
+        category = self.category
+
+        # 티켓 채널 생성
+        ticket_channel = await guild.create_text_channel(
+            name=channel_name,
+            category=category,
+            overwrites=overwrites
+        )
+
+        await interaction.response.send_message(f"✅ 티켓 채널 {ticket_channel.mention} 생성 완료!", ephemeral=True)
 
 # -------------------
 # 이벤트
@@ -38,7 +73,7 @@ async def on_message(message):
         target_channel = bot.get_channel(event_target_channel_id)
         if target_channel:
             # 1️⃣ 멘트 전송
-            await target_channel.send(" ???채널이 생성되었습니다! 얼른 찾고 문제를 풀어보세요!")
+            await target_channel.send("🎉 이벤트 시작! 모두 즐겁게 참여하세요!")
 
             # 2️⃣ 랜덤 위치에 ??? 채널 생성
             guild = target_channel.guild
@@ -48,16 +83,21 @@ async def on_message(message):
                 name="???",
                 category=random_category
             )
-            # 랜덤 위치 설정
             pos = random.randint(0, len(guild.text_channels)-1)
             await new_channel.edit(position=pos)
+
+            # 3️⃣ 랜덤 채널에 티켓 버튼 추가
+            ticket_category = guild.get_channel(ticket_category_id)
+            if ticket_category and isinstance(ticket_category, discord.CategoryChannel):
+                view = TicketButton(ticket_category)
+                await new_channel.send("🎫 티켓을 열려면 아래 버튼을 클릭하세요!", view=view)
 
             await target_channel.send(f"✅ 랜덤 채널 {new_channel.mention} 생성 완료!")
 
         return  # 이벤트 처리 후 더 이상 메시지 처리하지 않음
 
     # -------------------
-    # 닉네임 변경 기능 처리 (기존 코드 유지)
+    # 닉네임 변경 기능 처리
     # -------------------
     if message.channel.id == nickname_channel_id and nickname_change_enabled:
         new_name = message.content.strip()
@@ -86,7 +126,6 @@ async def on_message(message):
 # -------------------
 @bot.command()
 async def toggle_nick(ctx):
-    """닉네임 변경 기능 ON/OFF 토글"""
     global nickname_change_enabled
     nickname_change_enabled = not nickname_change_enabled
     status = "✅ 활성화됨" if nickname_change_enabled else "❌ 비활성화됨"

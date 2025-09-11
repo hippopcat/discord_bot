@@ -13,7 +13,7 @@ nickname_change_enabled = True
 all_features_enabled = True
 
 nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널
-event_target_channel_id = 1414591898366251040  # 📌 멘트를 보낼 목적 채널 (코드에서 미리 지정)
+event_target_channel_id = 1415671461334614024  # 📌 멘트를 보낼 목적 채널 (코드에서 미리 지정)
 
 # -------------------
 # 이벤트
@@ -38,7 +38,7 @@ async def on_message(message):
         target_channel = bot.get_channel(event_target_channel_id)
         if target_channel:
             # 1️⃣ 멘트 전송
-            await target_channel.send("🎉 이벤트 시작! 모두 즐겁게 참여하세요!")
+            await target_channel.send(" ???채널이 생성되었습니다! 얼른 찾고 문제를 풀어보세요!")
 
             # 2️⃣ 랜덤 위치에 ??? 채널 생성
             guild = target_channel.guild

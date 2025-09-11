@@ -1,49 +1,19 @@
 import discord
-from discord.ext import commands, tasks
-import re
-import asyncio
+from discord.ext import commands
 import os
 import random
-from datetime import datetime
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-# -------------------
-# 접두사 추출 함수
-# -------------------
-def extract_prefix(nickname: str) -> str:
-    prefix = ""
-    bracket_patterns = [
-        r'\[[^\]]+\]',
-        r'꒰[^꒱]+꒱',
-        r'【[^】]+】',
-        r'「[^」]+」',
-        r'《[^》]+》',
-    ]
-    combined_pattern = re.compile(r'^(' + '|'.join(bracket_patterns) + r')\s*')
-    while match := combined_pattern.match(nickname):
-        prefix += match.group(0)
-        nickname = nickname[match.end():]
-
-    if prefix and not prefix.endswith(' '):
-        prefix += ' '
-
-    special_pattern = re.compile(r'^[#*!~]+')
-    if match := special_pattern.match(nickname):
-        cleaned = "".join(dict.fromkeys(match.group(0)))  # 중복 제거
-        if cleaned:
-            prefix += cleaned + ' '
-
-    return prefix
 
 # -------------------
 # 전역 상태
 # -------------------
 nickname_change_enabled = True
 all_features_enabled = True
-nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널 ID
-auto_message_channel_id = 1414591898366251038  # 멘트 보낼 채널 ID (같은 채널로 설정 예시)
+
+nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널
+event_channel_id = 1414591898366251038     # 이벤트 멘트 전용 채널
 
 # -------------------
 # 이벤트
@@ -51,7 +21,6 @@ auto_message_channel_id = 1414591898366251038  # 멘트 보낼 채널 ID (같은
 @bot.event
 async def on_ready():
     print(f"✅ 로그인 성공: {bot.user}")
-    auto_task.start()  # 봇 켜질 때 자동 태스크 시작
 
 @bot.event
 async def on_message(message):
@@ -60,49 +29,58 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    content = message.content.strip().lower()
+    content = message.content.strip()
 
-    # ✅ 전용 채널이 아니면 무시
-    if message.channel.id != nickname_channel_id:
-        return
+    # -------------------
+    # 이벤트 시작
+    # -------------------
+    if content == "이벤트 시작!":
+        channel = bot.get_channel(event_channel_id)
+        if channel:
+            # 1️⃣ 멘트 전송
+            await channel.send("🎉 이벤트 시작! 모두 즐겁게 참여하세요!")
 
-    # 모든 기능 종료 상태면 무시
-    if not all_features_enabled:
-        return
+            # 2️⃣ 랜덤 위치에 ??? 채널 생성
+            guild = channel.guild
+            categories = guild.categories
+            random_category = random.choice(categories) if categories else None
+            new_channel = await guild.create_text_channel(
+                name="???",
+                category=random_category
+            )
+            # 랜덤 위치 설정
+            pos = random.randint(0, len(guild.text_channels)-1)
+            await new_channel.edit(position=pos)
 
-    # "off" 입력 시 전체 기능 종료 (채널 내에서만 가능)
-    if content == "off":
-        all_features_enabled = False
-        nickname_change_enabled = False
-        await message.channel.send("⚠️ 모든 기능이 종료되었습니다.")
-        return
+            await channel.send(f"✅ 랜덤 채널 {new_channel.mention} 생성 완료!")
 
-    # ✅ 명령어도 전용 채널에서만 작동
+        return  # 이벤트 처리 후 더 이상 메시지 처리하지 않음
+
+    # -------------------
+    # 닉네임 변경 기능 처리 (기존 코드 유지)
+    # -------------------
+    if message.channel.id == nickname_channel_id and nickname_change_enabled:
+        new_name = message.content.strip()
+        if new_name.lower() != "삭제":
+            try:
+                await message.author.edit(nick=new_name)
+            except discord.Forbidden:
+                print(f"권한 부족: {message.author} 닉네임 변경 실패")
+            except discord.HTTPException as e:
+                print(f"닉네임 변경 실패 (HTTPException): {e}")
+            except Exception as e:
+                print(f"닉네임 변경 실패 (Exception): {e}")
+        else:
+            # "삭제" 입력 시 접두사만 유지 (기존 접두사 유지 로직이 있으면 추가 가능)
+            try:
+                await message.author.edit(nick="")
+            except:
+                pass
+
+    # -------------------
+    # 명령어 처리
+    # -------------------
     await bot.process_commands(message)
-
-    # 닉네임 변경 기능 OFF 상태면 무시
-    if not nickname_change_enabled:
-        return
-
-    # -------------------
-    # 닉네임 변경 로직
-    # -------------------
-    new_name = message.content.strip()
-    current_nick = message.author.display_name
-    prefix = extract_prefix(current_nick)
-
-    # "삭제" 입력 시 접두사만 유지
-    new_nickname = prefix.strip() if new_name == "삭제" else f"{prefix}{new_name}"
-
-    if new_nickname != current_nick:
-        try:
-            await message.author.edit(nick=new_nickname)
-        except discord.Forbidden:
-            print(f"권한 부족: {message.author} 닉네임 변경 실패")
-        except discord.HTTPException as e:
-            print(f"닉네임 변경 실패 (HTTPException): {e}")
-        except Exception as e:
-            print(f"닉네임 변경 실패 (Exception): {e}")
 
 # -------------------
 # 명령어
@@ -111,40 +89,13 @@ async def on_message(message):
 async def toggle_nick(ctx):
     """닉네임 변경 기능 ON/OFF 토글"""
     global nickname_change_enabled
-    if not all_features_enabled:
-        await ctx.send("⚠️ 봇의 모든 기능이 종료되어 사용할 수 없습니다.")
-        return
     nickname_change_enabled = not nickname_change_enabled
     status = "✅ 활성화됨" if nickname_change_enabled else "❌ 비활성화됨"
     await ctx.send(f"닉네임 변경 기능이 이제 {status}")
 
 @bot.command()
 async def ping(ctx):
-    if not all_features_enabled:
-        return
     await ctx.send("pong!")
-
-# -------------------
-# 자동 실행 기능 (특정 시간에 메시지 + 랜덤 채널 생성)
-# -------------------
-@tasks.loop(minutes=1)
-async def auto_task():
-    now = datetime.now().strftime("%H:%M")
-    # 예: 매일 12:00에 실행
-    if now == "12:00":
-        channel = bot.get_channel(auto_message_channel_id)
-        if channel:
-            await channel.send("⏰ 정해진 시간 알림! 모두 안녕하세요 👋")
-
-            # 랜덤 위치에 채널 생성
-            guild = channel.guild
-            categories = guild.categories
-            if categories:
-                random_category = random.choice(categories)
-                await guild.create_text_channel(
-                    name=f"랜덤-채널-{random.randint(1000,9999)}",
-                    category=random_category
-                )
 
 # -------------------
 # 실행
@@ -152,4 +103,5 @@ async def auto_task():
 token = os.getenv("DISCORD_TOKEN")
 if not token:
     raise ValueError("❌ DISCORD_TOKEN 환경변수가 설정되지 않았습니다.")
+
 bot.run(token)

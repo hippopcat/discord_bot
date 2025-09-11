@@ -13,7 +13,7 @@ nickname_change_enabled = True
 all_features_enabled = True
 
 nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널
-event_channel_id = 1414591898366251038     # 이벤트 멘트 전용 채널
+event_target_channel_id = 1414591898366251040  # 📌 멘트를 보낼 목적 채널 (코드에서 미리 지정)
 
 # -------------------
 # 이벤트
@@ -35,13 +35,13 @@ async def on_message(message):
     # 이벤트 시작
     # -------------------
     if content == "이벤트 시작!":
-        channel = bot.get_channel(event_channel_id)
-        if channel:
+        target_channel = bot.get_channel(event_target_channel_id)
+        if target_channel:
             # 1️⃣ 멘트 전송
-            await channel.send("🎉 서버 어딘가에 ???가 생겼다?! 얼른 찾고 선물받으세여!")
+            await target_channel.send("🎉 이벤트 시작! 모두 즐겁게 참여하세요!")
 
             # 2️⃣ 랜덤 위치에 ??? 채널 생성
-            guild = channel.guild
+            guild = target_channel.guild
             categories = guild.categories
             random_category = random.choice(categories) if categories else None
             new_channel = await guild.create_text_channel(
@@ -52,7 +52,7 @@ async def on_message(message):
             pos = random.randint(0, len(guild.text_channels)-1)
             await new_channel.edit(position=pos)
 
-            await channel.send(f"✅ 랜덤 채널 {new_channel.mention} 생성 완료!")
+            await target_channel.send(f"✅ 랜덤 채널 {new_channel.mention} 생성 완료!")
 
         return  # 이벤트 처리 후 더 이상 메시지 처리하지 않음
 
@@ -71,7 +71,6 @@ async def on_message(message):
             except Exception as e:
                 print(f"닉네임 변경 실패 (Exception): {e}")
         else:
-            # "삭제" 입력 시 접두사만 유지 (기존 접두사 유지 로직이 있으면 추가 가능)
             try:
                 await message.author.edit(nick="")
             except:

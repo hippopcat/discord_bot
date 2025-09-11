@@ -38,7 +38,7 @@ async def on_message(message):
         channel = bot.get_channel(event_channel_id)
         if channel:
             # 1️⃣ 멘트 전송
-            await channel.send("🎉 이벤트 시작! 모두 즐겁게 참여하세요!")
+            await channel.send("🎉 서버 어딘가에 ???가 생겼다?! 얼른 찾고 선물받으세여!")
 
             # 2️⃣ 랜덤 위치에 ??? 채널 생성
             guild = channel.guild

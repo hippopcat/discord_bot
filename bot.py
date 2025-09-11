@@ -10,11 +10,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # 전역 상태
 # -------------------
 nickname_change_enabled = True
-all_features_enabled = True
+event_running = False  # 이벤트 중복 방지
 
 nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널
-event_target_channel_id = 1415671461334614024  # 이벤트 멘트 채널
-ticket_category_id = 1415676436022558784  # 티켓 채널이 생성될 카테고리
+event_target_channel_id = 1414591898366251040  # 이벤트 멘트 채널
+ticket_category_id = 1414591898366251050  # 티켓 채널 생성 카테고리
 
 # -------------------
 # 티켓 버튼 클래스
@@ -25,30 +25,29 @@ class TicketButton(discord.ui.View):
         self.category = category
 
     @discord.ui.button(label="티켓 열기", style=discord.ButtonStyle.green)
-    async def open_ticket(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         user = interaction.user
 
-        # 티켓 채널 이름
-        channel_name = f"ticket-{user.name}"
+        # 채널 이름 중복 방지
+        channel_name = f"ticket-{user.name}-{random.randint(1000,9999)}"
 
-        # 권한 설정: 유저만 접근
+        # 권한 설정
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
 
-        # 카테고리 가져오기
-        category = self.category
-
         # 티켓 채널 생성
         ticket_channel = await guild.create_text_channel(
             name=channel_name,
-            category=category,
+            category=self.category,
             overwrites=overwrites
         )
 
-        await interaction.response.send_message(f"✅ 티켓 채널 {ticket_channel.mention} 생성 완료!", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ 티켓 채널 {ticket_channel.mention} 생성 완료!", ephemeral=True
+        )
 
 # -------------------
 # 이벤트
@@ -59,7 +58,7 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    global nickname_change_enabled, all_features_enabled
+    global nickname_change_enabled, event_running
 
     if message.author == bot.user:
         return
@@ -69,24 +68,27 @@ async def on_message(message):
     # -------------------
     # 이벤트 시작
     # -------------------
-    if content == "이벤트 시작!":
+    if content == "이벤트 시작!" and not event_running:
+        event_running = True  # 중복 방지
+
         target_channel = bot.get_channel(event_target_channel_id)
         if target_channel:
-            # 1️⃣ 멘트 전송
             await target_channel.send("🎉 이벤트 시작! 모두 즐겁게 참여하세요!")
 
-            # 2️⃣ 랜덤 위치에 ??? 채널 생성
             guild = target_channel.guild
             categories = guild.categories
             random_category = random.choice(categories) if categories else None
+
+            # 랜덤 채널 1개 생성
             new_channel = await guild.create_text_channel(
                 name="???",
                 category=random_category
             )
+
             pos = random.randint(0, len(guild.text_channels)-1)
             await new_channel.edit(position=pos)
 
-            # 3️⃣ 랜덤 채널에 티켓 버튼 추가
+            # 티켓 버튼 추가
             ticket_category = guild.get_channel(ticket_category_id)
             if ticket_category and isinstance(ticket_category, discord.CategoryChannel):
                 view = TicketButton(ticket_category)
@@ -94,27 +96,22 @@ async def on_message(message):
 
             await target_channel.send(f"✅ 랜덤 채널 {new_channel.mention} 생성 완료!")
 
-        return  # 이벤트 처리 후 더 이상 메시지 처리하지 않음
+        return  # 이벤트 처리 후 종료
 
     # -------------------
-    # 닉네임 변경 기능 처리
+    # 닉네임 변경 기능
     # -------------------
     if message.channel.id == nickname_channel_id and nickname_change_enabled:
         new_name = message.content.strip()
-        if new_name.lower() != "삭제":
-            try:
+        try:
+            if new_name.lower() != "삭제":
                 await message.author.edit(nick=new_name)
-            except discord.Forbidden:
-                print(f"권한 부족: {message.author} 닉네임 변경 실패")
-            except discord.HTTPException as e:
-                print(f"닉네임 변경 실패 (HTTPException): {e}")
-            except Exception as e:
-                print(f"닉네임 변경 실패 (Exception): {e}")
-        else:
-            try:
+            else:
                 await message.author.edit(nick="")
-            except:
-                pass
+        except discord.Forbidden:
+            await message.channel.send(f"❌ 권한 부족: {message.author} 닉네임 변경 실패")
+        except Exception as e:
+            await message.channel.send(f"❌ 닉네임 변경 실패: {e}")
 
     # -------------------
     # 명령어 처리

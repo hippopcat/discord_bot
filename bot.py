@@ -1,9 +1,10 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import re
 import asyncio
-import os  # 환경 변수 불러오기용
-import sys  # 프로그램 종료용
+import os
+import random
+from datetime import datetime
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -42,6 +43,7 @@ def extract_prefix(nickname: str) -> str:
 nickname_change_enabled = True
 all_features_enabled = True
 nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널 ID
+auto_message_channel_id = 1414591898366251038  # 멘트 보낼 채널 ID (같은 채널로 설정 예시)
 
 # -------------------
 # 이벤트
@@ -49,6 +51,7 @@ nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널 ID
 @bot.event
 async def on_ready():
     print(f"✅ 로그인 성공: {bot.user}")
+    auto_task.start()  # 봇 켜질 때 자동 태스크 시작
 
 @bot.event
 async def on_message(message):
@@ -122,11 +125,31 @@ async def ping(ctx):
     await ctx.send("pong!")
 
 # -------------------
+# 자동 실행 기능 (특정 시간에 메시지 + 랜덤 채널 생성)
+# -------------------
+@tasks.loop(minutes=1)
+async def auto_task():
+    now = datetime.now().strftime("%H:%M")
+    # 예: 매일 12:00에 실행
+    if now == "12:00":
+        channel = bot.get_channel(auto_message_channel_id)
+        if channel:
+            await channel.send("⏰ 정해진 시간 알림! 모두 안녕하세요 👋")
+
+            # 랜덤 위치에 채널 생성
+            guild = channel.guild
+            categories = guild.categories
+            if categories:
+                random_category = random.choice(categories)
+                await guild.create_text_channel(
+                    name=f"랜덤-채널-{random.randint(1000,9999)}",
+                    category=random_category
+                )
+
+# -------------------
 # 실행
 # -------------------
 token = os.getenv("DISCORD_TOKEN")
 if not token:
-    print("❌ 환경 변수 DISCORD_TOKEN이 설정되지 않았습니다. Railway Variables에 추가하세요.")
-    sys.exit(1)
-
+    raise ValueError("❌ DISCORD_TOKEN 환경변수가 설정되지 않았습니다.")
 bot.run(token)

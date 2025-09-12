@@ -1,53 +1,47 @@
 import discord
 from discord.ext import commands
-import os
-import random
+import re
+import asyncio
+import os  # 환경 변수 불러오기용
+import sys  # 프로그램 종료용
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # -------------------
+# 접두사 추출 함수
+# -------------------
+def extract_prefix(nickname: str) -> str:
+    prefix = ""
+    bracket_patterns = [
+        r'\[[^\]]+\]',
+        r'꒰[^꒱]+꒱',
+        r'【[^】]+】',
+        r'「[^」]+」',
+        r'《[^》]+》',
+    ]
+    combined_pattern = re.compile(r'^(' + '|'.join(bracket_patterns) + r')\s*')
+    while match := combined_pattern.match(nickname):
+        prefix += match.group(0)
+        nickname = nickname[match.end():]
+
+    if prefix and not prefix.endswith(' '):
+        prefix += ' '
+
+    special_pattern = re.compile(r'^[#*!~]+')
+    if match := special_pattern.match(nickname):
+        cleaned = "".join(dict.fromkeys(match.group(0)))  # 중복 제거
+        if cleaned:
+            prefix += cleaned + ' '
+
+    return prefix
+
+# -------------------
 # 전역 상태
 # -------------------
 nickname_change_enabled = True
-event_running = False  # 이벤트 중복 방지
-
-nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널
-event_target_channel_id = 1415676716533289101  # 이벤트 멘트 채널
-ticket_category_id = 1414591898366251050  # 티켓 채널 생성 카테고리
-
-# -------------------
-# 티켓 버튼 클래스
-# -------------------
-class TicketButton(discord.ui.View):
-    def __init__(self, category: discord.CategoryChannel):
-        super().__init__(timeout=None)
-        self.category = category
-
-    @discord.ui.button(label="티켓 열기", style=discord.ButtonStyle.green)
-    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        user = interaction.user
-
-        # 채널 이름 중복 방지
-        channel_name = f"ticket-{user.name}-{random.randint(1000,9999)}"
-
-        # 권한 설정
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        }
-
-        # 티켓 채널 생성
-        ticket_channel = await guild.create_text_channel(
-            name=channel_name,
-            category=self.category,
-            overwrites=overwrites
-        )
-
-        await interaction.response.send_message(
-            f"✅ 티켓 채널 {ticket_channel.mention} 생성 완료!", ephemeral=True
-        )
+all_features_enabled = True
+nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널 ID
 
 # -------------------
 # 이벤트
@@ -58,78 +52,73 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    global nickname_change_enabled, event_running
+    global nickname_change_enabled, all_features_enabled
 
     if message.author == bot.user:
         return
 
-    content = message.content.strip()
+    content = message.content.strip().lower()
 
-    # -------------------
-    # 이벤트 시작
-    # -------------------
-    if content == "이벤트 시작!" and not event_running:
-        event_running = True  # 중복 방지
+    # ✅ 전용 채널이 아니면 무시
+    if message.channel.id != nickname_channel_id:
+        return
 
-        target_channel = bot.get_channel(event_target_channel_id)
-        if target_channel:
-            await target_channel.send("🎉 이벤트 시작! 모두 즐겁게 참여하세요!")
+    # 모든 기능 종료 상태면 무시
+    if not all_features_enabled:
+        return
 
-            guild = target_channel.guild
-            categories = guild.categories
-            random_category = random.choice(categories) if categories else None
+    # "off" 입력 시 전체 기능 종료 (채널 내에서만 가능)
+    if content == "off":
+        all_features_enabled = False
+        nickname_change_enabled = False
+        await message.channel.send("⚠️ 모든 기능이 종료되었습니다.")
+        return
 
-            # 랜덤 채널 1개 생성
-            new_channel = await guild.create_text_channel(
-                name="???",
-                category=random_category
-            )
-
-            pos = random.randint(0, len(guild.text_channels)-1)
-            await new_channel.edit(position=pos)
-
-            # 티켓 버튼 추가
-            ticket_category = guild.get_channel(ticket_category_id)
-            if ticket_category and isinstance(ticket_category, discord.CategoryChannel):
-                view = TicketButton(ticket_category)
-                await new_channel.send("🎫 티켓을 열려면 아래 버튼을 클릭하세요!", view=view)
-
-            await target_channel.send(f"✅ 랜덤 채널 {new_channel.mention} 생성 완료!")
-
-        return  # 이벤트 처리 후 종료
-
-    # -------------------
-    # 닉네임 변경 기능
-    # -------------------
-    if message.channel.id == nickname_channel_id and nickname_change_enabled:
-        new_name = message.content.strip()
-        try:
-            if new_name.lower() != "삭제":
-                await message.author.edit(nick=new_name)
-            else:
-                await message.author.edit(nick="")
-        except discord.Forbidden:
-            await message.channel.send(f"❌ 권한 부족: {message.author} 닉네임 변경 실패")
-        except Exception as e:
-            await message.channel.send(f"❌ 닉네임 변경 실패: {e}")
-
-    # -------------------
-    # 명령어 처리
-    # -------------------
+    # ✅ 명령어도 전용 채널에서만 작동
     await bot.process_commands(message)
+
+    # 닉네임 변경 기능 OFF 상태면 무시
+    if not nickname_change_enabled:
+        return
+
+    # -------------------
+    # 닉네임 변경 로직
+    # -------------------
+    new_name = message.content.strip()
+    current_nick = message.author.display_name
+    prefix = extract_prefix(current_nick)
+
+    # "삭제" 입력 시 접두사만 유지
+    new_nickname = prefix.strip() if new_name == "삭제" else f"{prefix}{new_name}"
+
+    if new_nickname != current_nick:
+        try:
+            await message.author.edit(nick=new_nickname)
+        except discord.Forbidden:
+            print(f"권한 부족: {message.author} 닉네임 변경 실패")
+        except discord.HTTPException as e:
+            print(f"닉네임 변경 실패 (HTTPException): {e}")
+        except Exception as e:
+            print(f"닉네임 변경 실패 (Exception): {e}")
 
 # -------------------
 # 명령어
 # -------------------
 @bot.command()
 async def toggle_nick(ctx):
+    """닉네임 변경 기능 ON/OFF 토글"""
     global nickname_change_enabled
+    if not all_features_enabled:
+        await ctx.send("⚠️ 봇의 모든 기능이 종료되어 사용할 수 없습니다.")
+        return
     nickname_change_enabled = not nickname_change_enabled
     status = "✅ 활성화됨" if nickname_change_enabled else "❌ 비활성화됨"
     await ctx.send(f"닉네임 변경 기능이 이제 {status}")
 
 @bot.command()
 async def ping(ctx):
+    if not all_features_enabled:
+        return
     await ctx.send("pong!")
 
 # -------------------
@@ -137,6 +126,7 @@ async def ping(ctx):
 # -------------------
 token = os.getenv("DISCORD_TOKEN")
 if not token:
-    raise ValueError("❌ DISCORD_TOKEN 환경변수가 설정되지 않았습니다.")
+    print("❌ 환경 변수 DISCORD_TOKEN이 설정되지 않았습니다. Railway Variables에 추가하세요.")
+    sys.exit(1)
 
 bot.run(token)

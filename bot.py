@@ -13,7 +13,7 @@ nickname_change_enabled = True
 event_running = False  # 이벤트 중복 방지
 
 nickname_channel_id = 1414591898366251038  # 닉네임 변경 전용 채널
-event_target_channel_id = 1414591898366251040  # 이벤트 멘트 채널
+event_target_channel_id = 1415676716533289101  # 이벤트 멘트 채널
 ticket_category_id = 1414591898366251050  # 티켓 채널 생성 카테고리
 
 # -------------------
